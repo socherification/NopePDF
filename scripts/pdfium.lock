@@ -1,0 +1,10 @@
+# Pinned PDFium build from https://github.com/bblanchon/pdfium-binaries
+# Read by fetch-pdfium.ps1 and fetch-pdfium.sh. To upgrade, change the version
+# and replace every checksum (sha256 of the .tgz release assets).
+version chromium/8100
+sha256 pdfium-win-x64.tgz 51621bcc1d9be9ea448f4b84b0516862b928e3968d3fca899af1a6d6e2848d6d
+sha256 pdfium-win-arm64.tgz cca9b28d406ae2a902b0b710a92ab699c4c2931564ab6efe44630014d492a9ca
+sha256 pdfium-linux-x64.tgz 1c1894a12d4d96ee01400c3874444126254180c5c7d2ab628576b67f8120320a
+sha256 pdfium-linux-arm64.tgz 58c87a95a40a24c914a9c755fae798843f46f06adf9e5e9f2c893302d4bdb040
+sha256 pdfium-mac-x64.tgz d513a0530a0f0c1ca9929ded06660e27edb9a108a7d18d9df55a5fb060b091c8
+sha256 pdfium-mac-arm64.tgz 7ea647c7a7a9c1169be3f947000bc071ece2fade2cd6bd7e401e3675c6560cce

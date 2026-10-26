@@ -1,0 +1,5 @@
+* text=auto
+# Shell scripts must keep LF endings to run on macOS/Linux.
+*.sh text eol=lf
+*.ico binary
+*.png binary
