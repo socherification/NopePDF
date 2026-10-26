@@ -10,8 +10,11 @@ uses [Semantic Versioning](https://semver.org/).
 - `scripts/fetch-pdfium.ps1` and `scripts/fetch-pdfium.sh` download a pinned PDFium build
   and verify its checksum, so PDFium binaries are no longer kept in the repository.
 - README, roadmap, changelog and contributor/agent guide (`AGENTS.md`).
+- `scripts/make-icon.py` generates the app icon from a named color palette; previews of
+  all colors are kept in `assets/variants/`.
 
 ### Changed
+- New burgundy app icon (was red).
 - Portable build and installer now ship NopePDF's `LICENSE.txt` and the full set of PDFium
   third-party licenses in a `licenses` folder (previously only the pdfium-binaries build
   script license was included, under a misleading name).
