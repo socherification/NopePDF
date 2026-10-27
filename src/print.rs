@@ -12,13 +12,25 @@ pub struct PrintJob {
     pub output: Option<String>,
 }
 
+/// The printer device context belongs to the job and is released however the job ends.
+#[cfg(windows)]
+impl Drop for PrintJob {
+    fn drop(&mut self) {
+        if self.hdc != 0 {
+            unsafe {
+                let _ = windows::Win32::Graphics::Gdi::DeleteDC(windows::Win32::Graphics::Gdi::HDC(self.hdc as *mut _));
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 mod imp {
     use super::PrintJob;
     use pdfium_render::prelude::*;
     use windows::Win32::Foundation::{GlobalFree, HGLOBAL, HWND};
     use windows::Win32::Graphics::Gdi::*;
-    use windows::Win32::Storage::Xps::{DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
+    use windows::Win32::Storage::Xps::{AbortDoc, DOCINFOW, EndDoc, EndPage, StartDocW, StartPage};
     use windows::Win32::UI::Controls::Dialogs::*;
     use windows::core::PCWSTR;
 
@@ -62,13 +74,11 @@ mod imp {
 
     pub fn print_document(doc: &PdfDocument, job: PrintJob) -> Result<(), String> {
         let hdc = HDC(job.hdc as *mut _);
-        let res = unsafe { print_pages(doc, hdc, &job) };
-        unsafe {
-            let _ = DeleteDC(hdc);
-        }
-        res
+        unsafe { print_pages(doc, hdc, &job) }
     }
 
+    /// Prints the whole range or nothing: any failure aborts the job instead of
+    /// silently leaving pages out.
     unsafe fn print_pages(doc: &PdfDocument, hdc: HDC, job: &PrintJob) -> Result<(), String> {
         let name: Vec<u16> = job.name.encode_utf16().chain(Some(0)).collect();
         let output: Option<Vec<u16>> = job.output.as_ref().map(|o| o.encode_utf16().chain(Some(0)).collect());
@@ -81,21 +91,36 @@ mod imp {
         if unsafe { StartDocW(hdc, &di) } <= 0 {
             return Err("Nie udało się rozpocząć wydruku".into());
         }
-        let dpi = unsafe { GetDeviceCaps(Some(hdc), LOGPIXELSX) }.max(72) as f32;
+        match unsafe { print_range(doc, hdc, job) } {
+            Ok(()) if unsafe { EndDoc(hdc) } > 0 => Ok(()),
+            Ok(()) => Err("Błąd drukarki".into()),
+            Err(e) => {
+                unsafe { AbortDoc(hdc) };
+                Err(e)
+            }
+        }
+    }
+
+    unsafe fn print_range(doc: &PdfDocument, hdc: HDC, job: &PrintJob) -> Result<(), String> {
+        // Printers may have different horizontal and vertical resolutions.
+        let dpi_x = unsafe { GetDeviceCaps(Some(hdc), LOGPIXELSX) }.max(72) as f32;
+        let dpi_y = unsafe { GetDeviceCaps(Some(hdc), LOGPIXELSY) }.max(72) as f32;
         let area_w = unsafe { GetDeviceCaps(Some(hdc), HORZRES) } as f32;
         let area_h = unsafe { GetDeviceCaps(Some(hdc), VERTRES) } as f32;
-        let render_dpi = dpi.min(300.0);
+        let render_dpi = dpi_x.max(dpi_y).min(300.0);
+        let render_err = |i: usize| format!("Nie udało się przygotować strony {} do wydruku", i + 1);
 
         for i in job.from..=job.to {
-            let Ok(page) = doc.pages().get(i as PdfPageIndex) else { continue };
+            let page = doc.pages().get(i as PdfPageIndex).map_err(|_| render_err(i))?;
             let (pw, ph) = (page.width().value, page.height().value);
-            // Auto-rotate landscape pages onto portrait paper (and vice versa).
-            let rotate = (pw > ph) != (area_w > area_h);
+            // Auto-rotate landscape pages onto portrait paper (and vice versa), comparing
+            // the printable area in inches.
+            let rotate = (pw > ph) != (area_w / dpi_x > area_h / dpi_y);
             let (pw_r, ph_r) = if rotate { (ph, pw) } else { (pw, ph) };
             // Fit to printable area, never enlarge beyond 100%.
-            let fit = (area_w / (pw_r / 72.0 * dpi)).min(area_h / (ph_r / 72.0 * dpi)).min(1.0);
-            let dest_w = pw_r / 72.0 * dpi * fit;
-            let dest_h = ph_r / 72.0 * dpi * fit;
+            let fit = (area_w / (pw_r / 72.0 * dpi_x)).min(area_h / (ph_r / 72.0 * dpi_y)).min(1.0);
+            let dest_w = pw_r / 72.0 * dpi_x * fit;
+            let dest_h = ph_r / 72.0 * dpi_y * fit;
             let scale = render_dpi / 72.0 * fit;
 
             let cfg = PdfRenderConfig::new()
@@ -103,7 +128,7 @@ mod imp {
                 .rotate(if rotate { PdfPageRenderRotation::Degrees90 } else { PdfPageRenderRotation::None }, true)
                 .render_form_data(true)
                 .set_clear_color(PdfColor::WHITE);
-            let Ok(bmp) = page.render_with_config(&cfg) else { continue };
+            let bmp = page.render_with_config(&cfg).map_err(|_| render_err(i))?;
             let (bw, bh) = (bmp.width(), bmp.height());
             // GDI wants BGRA; convert from a known RGBA layout rather than trusting the raw order.
             let mut bgra = bmp.as_rgba_bytes();
@@ -112,7 +137,6 @@ mod imp {
             }
 
             if unsafe { StartPage(hdc) } <= 0 {
-                unsafe { EndDoc(hdc) };
                 return Err("Błąd drukarki".into());
             }
             let bmi = BITMAPINFO {
@@ -129,7 +153,7 @@ mod imp {
             };
             let x = ((area_w - dest_w) / 2.0) as i32;
             let y = ((area_h - dest_h) / 2.0) as i32;
-            unsafe {
+            let copied = unsafe {
                 SetStretchBltMode(hdc, HALFTONE);
                 StretchDIBits(
                     hdc,
@@ -145,11 +169,12 @@ mod imp {
                     &bmi,
                     DIB_RGB_COLORS,
                     SRCCOPY,
-                );
-                EndPage(hdc);
+                )
+            };
+            if copied <= 0 || unsafe { EndPage(hdc) } <= 0 {
+                return Err("Błąd drukarki".into());
             }
         }
-        unsafe { EndDoc(hdc) };
         Ok(())
     }
 }

@@ -208,7 +208,11 @@ impl Doc {
             }
         }
         self.state = LoadState::Ready;
+        // Rebuild the layout now: a reloaded file may have fewer pages, and page lookups
+        // (current_page, fit zoom, thumbnails) must never use the old page positions.
         self.layout_dirty = true;
+        self.ensure_layout();
+        self.clamp_scroll();
     }
 
     fn page_disp_pts(&self, i: usize) -> Vec2 {

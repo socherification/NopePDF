@@ -20,6 +20,23 @@ uses [Semantic Versioning](https://semver.org/).
   script license was included, under a misleading name).
 - The printing test is skipped when the local sample file is missing.
 - Code formatted with rustfmt (`rustfmt.toml`); `.gitattributes` keeps shell scripts LF.
+- Release builds no longer embed or search the build machine's `vendor/pdfium` path;
+  only debug builds do. `build.ps1` also remaps local source paths (user name, project
+  folder) out of the release binary.
+- The fetch scripts re-download PDFium when `scripts/pdfium.lock` changes.
+- The single-instance token file is readable only by the owner on macOS/Linux.
+
+### Fixed
+- Crash when a file is reloaded with fewer pages than before (e.g. a LaTeX rebuild)
+  while viewing one of the removed pages.
+- Searching in one tab no longer cancels a running search in another tab.
+- Printing: pages that fail to render or print now abort the job with an error instead
+  of being left out silently; the printer handle is always released; printers with
+  different horizontal and vertical resolution print at the correct size.
+- Single instance: a local client can no longer exhaust memory or block forwarding with
+  an oversized or slow message; a launch during shutdown no longer loses its file.
+- `scripts/register.ps1` no longer wipes other applications' entries under
+  `RegisteredApplications` and `.pdf\OpenWithProgids`.
 
 ## [0.2.0] - 2026-10-17
 
@@ -51,7 +68,3 @@ uses [Semantic Versioning](https://semver.org/).
 - Dark mode and inverted page colors.
 - Password-protected PDFs, full screen, go to page.
 - Printing on Windows through the system print dialog (rendered at up to 300 DPI).
-
-[Unreleased]: https://github.com/socherification/NopePDF/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/socherification/NopePDF/releases/tag/v0.2.0
-[0.1.0]: https://github.com/socherification/NopePDF/releases/tag/v0.1.0

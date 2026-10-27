@@ -11,15 +11,19 @@ use eframe::egui;
 use pdfium_render::prelude::*;
 use std::path::PathBuf;
 
-/// Look for the PDFium library next to the executable first, then in the
-/// development vendor directory, then on the system search path.
+/// Look for the PDFium library next to the executable first, then (debug builds
+/// only) in the vendor directory of the source tree, then on the system search path.
+/// Release builds must not embed or search the build machine's paths.
 fn load_pdfium() -> Result<Pdfium, String> {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
         dirs.push(dir);
     }
-    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/pdfium/bin"));
-    dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/pdfium/lib"));
+    #[cfg(debug_assertions)]
+    {
+        dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/pdfium/bin"));
+        dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("vendor/pdfium/lib"));
+    }
     for d in &dirs {
         let lib = Pdfium::pdfium_platform_library_name_at_path(d);
         if lib.exists() {

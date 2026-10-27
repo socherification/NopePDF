@@ -52,7 +52,9 @@ pub enum Cmd {
         query: String,
         generation: u64,
     },
-    CancelSearch,
+    CancelSearch {
+        doc: DocId,
+    },
     #[cfg_attr(not(windows), allow(dead_code))]
     Print {
         doc: DocId,
@@ -136,7 +138,7 @@ pub fn spawn(pdfium: Pdfium, ctx: egui::Context) -> WorkerHandle {
         .name("pdf-worker".into())
         .spawn(move || {
             let pdfium: &'static Pdfium = Box::leak(Box::new(pdfium));
-            Worker { pdfium, docs: HashMap::new(), search: None, cmd_rx, ev_tx, queue: q, ctx }.run();
+            Worker { pdfium, docs: HashMap::new(), searches: Vec::new(), cmd_rx, ev_tx, queue: q, ctx }.run();
         })
         .expect("spawn worker");
     WorkerHandle { tx, rx, queue }
@@ -152,7 +154,8 @@ struct Search {
 struct Worker {
     pdfium: &'static Pdfium,
     docs: HashMap<DocId, PdfDocument<'static>>,
-    search: Option<Search>,
+    /// Running searches, one per document, stepped round-robin.
+    searches: Vec<Search>,
     cmd_rx: mpsc::Receiver<Cmd>,
     ev_tx: mpsc::Sender<Event>,
     queue: Arc<Mutex<Queue>>,
@@ -180,7 +183,7 @@ impl Worker {
             if let Some(job) = job {
                 self.do_job(job);
                 self.queue.lock().unwrap().current = None;
-            } else if self.search.is_some() {
+            } else if !self.searches.is_empty() {
                 self.search_step();
             } else {
                 // Idle: block until something arrives.
@@ -228,14 +231,13 @@ impl Worker {
             }
             Cmd::Close { doc } => {
                 self.docs.remove(&doc);
-                if self.search.as_ref().is_some_and(|s| s.doc == doc) {
-                    self.search = None;
-                }
+                self.searches.retain(|s| s.doc != doc);
             }
             Cmd::Search { doc, query, generation } => {
-                self.search = Some(Search { doc, query, generation, next_page: 0 });
+                self.searches.retain(|s| s.doc != doc);
+                self.searches.push(Search { doc, query, generation, next_page: 0 });
             }
-            Cmd::CancelSearch => self.search = None,
+            Cmd::CancelSearch { doc } => self.searches.retain(|s| s.doc != doc),
             Cmd::Print { doc, job } => {
                 let res = match self.docs.get(&doc) {
                     Some(d) => crate::print::print_document(d, job),
@@ -318,17 +320,17 @@ impl Worker {
         }
     }
 
+    /// Searches one page of the first running search, then moves it to the back of the line.
     fn search_step(&mut self) {
-        let Some(s) = self.search.as_mut() else { return };
-        let Some(d) = self.docs.get(&s.doc) else {
-            self.search = None;
+        if self.searches.is_empty() {
             return;
-        };
+        }
+        let mut s = self.searches.remove(0);
+        let Some(d) = self.docs.get(&s.doc) else { return };
         let n = d.pages().len() as usize;
         let page = s.next_page;
         let (doc, generation) = (s.doc, s.generation);
         if page >= n {
-            self.search = None;
             self.send(Event::SearchProgress { doc, generation, page, done: true });
             return;
         }
@@ -353,9 +355,10 @@ impl Worker {
         if !hits.is_empty() {
             self.send(Event::SearchHits { doc, generation, page, hits });
         }
-        if page % 20 == 0 {
+        if page.is_multiple_of(20) {
             self.send(Event::SearchProgress { doc, generation, page, done: false });
         }
+        self.searches.push(s);
     }
 }
 

@@ -32,6 +32,9 @@ Linux.
 - Windows: `.\scripts\build.ps1`. It fetches PDFium into `vendor/pdfium` when missing.
   For a quick check: `scripts\fetch-pdfium.ps1` once, then `cargo build` / `cargo test`.
 - macOS/Linux: `scripts/fetch-pdfium.sh`, then `cargo build`.
+- Debug builds find PDFium in `vendor/pdfium`; release builds only look next to the
+  executable and on the system path (no build-machine paths in shipped binaries).
+  `build.ps1` copies the DLL into `dist\NopePDF\`.
 - GNU toolchain on Windows needs MinGW binutils (WinLibs) on `PATH`; `build.ps1` adds it.
   When calling `cargo` directly from PowerShell, prepend the WinLibs `mingw64\bin` dir.
 - `cargo test` must pass on a fresh clone. Tests that need local sample files
@@ -80,7 +83,7 @@ When you change behavior:
 ## Releasing
 
 1. Bump `version` in `Cargo.toml`; move `[Unreleased]` entries in `CHANGELOG.md` under the
-   new version with the date and update the compare links.
+   new version with the date.
 2. `.\scripts\build.ps1` → `dist\NopePDF-setup-<version>.exe` and `dist\NopePDF\`.
 3. Tag `v<version>` and attach the installer and a zip of the portable folder to the
    GitHub release.

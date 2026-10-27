@@ -33,6 +33,28 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 - Release automation (GitHub Actions building the installer and portable zip).
 - Code signing for the Windows installer (avoids the SmartScreen warning).
 
+## Known issues
+
+Found in the review of the initial import (2026-10-27); not fixed yet.
+
+- Printing runs on the PDFium worker thread, so the app stops rendering while a job is
+  printed or a "Save as" dialog of a PDF printer is open. Print page by page instead.
+- The print dialog has no owner window, so it is not modal and can open behind NopePDF.
+- Settings are not saved atomically, and on Linux a non-UTF-8 file path in the history
+  stops settings from being saved.
+- Forwarded file paths are sent one per line as UTF-8, so names containing a newline or
+  invalid UTF-8 (possible on macOS/Linux) fail when opened in a running instance.
+- macOS: Finder opens files through Apple Events, not command-line arguments, so
+  double-clicking a PDF probably does not open it yet.
+- The recent-files list and change detection touch the disk on the UI thread, which can
+  stall the UI with offline network paths.
+- Memory: extracted page text is never freed, and very high zoom keeps a few large
+  page textures (tiled rendering in the backlog fixes the latter).
+- The single-instance lock and port files live in the roaming config directory; a local
+  runtime directory would be more robust on network homes.
+- A zoom value restored from settings is not validated.
+- `fetch-pdfium.ps1` picks the PDFium architecture from the OS, not from the Rust target.
+
 ## Ideas (not decided)
 
 - Indicator when the open file was deleted or moved on disk (today the document simply

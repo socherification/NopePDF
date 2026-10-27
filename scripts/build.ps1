@@ -9,6 +9,11 @@ $mingw = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Directory 
 if ($mingw) { $env:PATH = "$mingw;$env:PATH" }
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 
+# Keep local paths (user name, project folder) out of the shipped binary: rustc embeds
+# source paths of panic locations, including those of dependencies.
+$cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
+$env:RUSTFLAGS = "--remap-path-prefix=$cargoHome=cargo --remap-path-prefix=$root=nopepdf"
+
 Push-Location $root
 try {
     & (Join-Path $PSScriptRoot "fetch-pdfium.ps1")

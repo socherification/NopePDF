@@ -279,7 +279,7 @@ impl App {
             d.search.open = false;
             d.search.searched.clear();
             d.reset_search_results();
-            let _ = self.worker.tx.send(Cmd::CancelSearch);
+            let _ = self.worker.tx.send(Cmd::CancelSearch { doc: d.id });
         }
     }
 

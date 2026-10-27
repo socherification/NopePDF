@@ -60,6 +60,7 @@ The installer is not code-signed yet, so SmartScreen shows an "unknown publisher
 | Print | Ctrl+P |
 | Reload from disk | F5 |
 | Full screen | F11 |
+| Leave full screen / close search / clear selection | Esc |
 | Scroll | Arrows, PgUp/PgDn, Space/Shift+Space, Home/End |
 
 ## Building from source
@@ -92,8 +93,10 @@ scripts/fetch-pdfium.sh
 cargo build --release
 ```
 
-At run time NopePDF looks for the PDFium library next to the executable, then in
-`vendor/pdfium/lib`, then on the system library path.
+At run time NopePDF looks for the PDFium library next to the executable, then on the
+system library path. Debug builds also look in `vendor/pdfium/bin` and `vendor/pdfium/lib`
+of the source tree, so `cargo run` works; for a release build, put the library next to
+the executable (`build.ps1` does this in `dist\NopePDF\`).
 
 ### Tests
 
@@ -108,7 +111,7 @@ skipped when the file is missing.
 ## Settings
 
 Stored as TOML in the user config directory (`%APPDATA%\NopePDF\settings.toml` on Windows):
-theme, sidebar state and the per-file history (page, zoom, fit mode).
+theme, inverted page colors, sidebar state and the per-file history (page, zoom, fit mode).
 
 ## Roadmap
 
