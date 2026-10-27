@@ -83,7 +83,10 @@ When you change behavior:
 ## Releasing
 
 1. Bump `version` in `Cargo.toml`; move `[Unreleased]` entries in `CHANGELOG.md` under the
-   new version with the date.
+   new version with the date, and add the version's link at the bottom.
 2. `.\scripts\build.ps1` → `dist\NopePDF-setup-<version>.exe` and `dist\NopePDF\`.
-3. Tag `v<version>` and attach the installer and a zip of the portable folder to the
-   GitHub release.
+   Check that the exe contains no local paths (e.g. search it for your user name).
+3. Zip the portable folder as `NopePDF-<version>-portable-win-x64.zip` and write
+   `SHA256SUMS.txt` for the installer and the zip.
+4. Create an annotated tag `v<version>` on the release commit, push it, and create the
+   GitHub release from it with the notes from `CHANGELOG.md` and the three files.

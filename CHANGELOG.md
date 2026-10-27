@@ -6,7 +6,21 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
+First public release.
+
 ### Added
+- Single window with tabs: PDFs opened from Explorer, "Open with" or the command line are
+  added as tabs to the running instance, which comes to the front. Starting NopePDF again
+  without a file just activates the existing window.
+- Files are read fully into memory, so an open PDF is never locked on disk.
+- Change detection: when the open file changes on disk, a bar offers *Reload (F5)*,
+  *Always reload this file* and *Ignore*; changed background tabs show a ● marker.
+- F5 reloads the current file.
+- Windows installer (Inno Setup): per-user install without admin rights, PDF viewer
+  registration, Start menu entry, optional desktop icon.
+- Application icon embedded in the executable.
 - `scripts/fetch-pdfium.ps1` and `scripts/fetch-pdfium.sh` download a pinned PDFium build
   and verify its checksum, so PDFium binaries are no longer kept in the repository.
 - README, roadmap, changelog and contributor/agent guide (`AGENTS.md`).
@@ -27,6 +41,9 @@ uses [Semantic Versioning](https://semver.org/).
 - The single-instance token file is readable only by the owner on macOS/Linux.
 
 ### Fixed
+- Empty or directory command-line arguments no longer produce an "unable to open" error.
+- The error screen uses the theme background instead of black.
+- Invalid or damaged files show a readable message instead of an internal PDFium error.
 - Crash when a file is reloaded with fewer pages than before (e.g. a LaTeX rebuild)
   while viewing one of the removed pages.
 - Searching in one tab no longer cancels a running search in another tab.
@@ -37,25 +54,6 @@ uses [Semantic Versioning](https://semver.org/).
   an oversized or slow message; a launch during shutdown no longer loses its file.
 - `scripts/register.ps1` no longer wipes other applications' entries under
   `RegisteredApplications` and `.pdf\OpenWithProgids`.
-
-## [0.2.0] - 2026-10-17
-
-### Added
-- Single window with tabs: PDFs opened from Explorer, "Open with" or the command line are
-  added as tabs to the running instance, which comes to the front. Starting NopePDF again
-  without a file just activates the existing window.
-- Files are read fully into memory, so an open PDF is never locked on disk.
-- Change detection: when the open file changes on disk, a bar offers *Reload (F5)*,
-  *Always reload this file* and *Ignore*; changed background tabs show a ● marker.
-- F5 reloads the current file.
-- Windows installer (Inno Setup): per-user install without admin rights, PDF viewer
-  registration, Start menu entry, optional desktop icon.
-- Application icon embedded in the executable.
-
-### Fixed
-- Empty or directory command-line arguments no longer produce an "unable to open" error.
-- The error screen uses the theme background instead of black.
-- Invalid or damaged files show a readable message instead of an internal PDFium error.
 
 ## [0.1.0] - 2026-10-17
 
@@ -68,3 +66,6 @@ uses [Semantic Versioning](https://semver.org/).
 - Dark mode and inverted page colors.
 - Password-protected PDFs, full screen, go to page.
 - Printing on Windows through the system print dialog (rendered at up to 300 DPI).
+
+[Unreleased]: https://github.com/socherification/NopePDF/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/socherification/NopePDF/releases/tag/v0.2.0
