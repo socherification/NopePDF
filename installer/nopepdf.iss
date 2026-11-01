@@ -52,6 +52,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\NopePDF\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\NopePDF\nopepdf-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\NopePDF\pdfium.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\NopePDF\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\NopePDF\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion

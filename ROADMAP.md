@@ -20,7 +20,7 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 
 | Item | Status | Plan |
 |---|---|---|
-| Headless command-line printing (`nopepdf-cli --print`), printer listing, duplex and copies, document info and page rendering for scripts and AI agents; CUPS backend for macOS/Linux | Planned | [headless-printing](docs/plans/headless-printing.md) |
+| Check `nopepdf-cli` two-sided printing and copies on a real printer, and its CUPS backend on macOS/Linux | Waiting for a person | [headless-printing](docs/plans/headless-printing.md) |
 
 ## Backlog
 
@@ -32,6 +32,7 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 - Font fallback for Chinese, Japanese and Korean translations (step 6 of the
   [localization](docs/plans/localization.md) plan), when such a translation is contributed.
 - Release automation (GitHub Actions building the installer and portable zip).
+- Installer option to put `nopepdf-cli` on `PATH`.
 - Code signing for the Windows installer (avoids the SmartScreen warning).
 
 ## Known issues
@@ -60,6 +61,11 @@ Found in the review of the initial import (2026-10-27); not fixed yet.
 - Forms and annotations: low priority, NopePDF is mainly for reading.
 
 ## Plan history
+
+### 2026-11-01: headless printing done
+- `nopepdf-cli` implemented (steps 1–5 of the plan); the shared code became a library
+  target. Copies are sent as repeated pages instead of relying on the driver, with an
+  empty page between copies when printing two-sided with an odd page count.
 
 ### 2026-11-01: multilingual UI and printing fixes done
 - Agreed order after v0.2.0: multilingual UI first (so later features are not translated

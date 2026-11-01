@@ -298,6 +298,9 @@ mod tests {
             ("main.rs", include_str!("main.rs")),
             ("settings.rs", include_str!("settings.rs")),
             ("instance.rs", include_str!("instance.rs")),
+            ("lib.rs", include_str!("lib.rs")),
+            ("pdf.rs", include_str!("pdf.rs")),
+            ("bin/nopepdf-cli.rs", include_str!("bin/nopepdf-cli.rs")),
         ];
         let polish = ['\u{105}', '\u{107}', '\u{119}', '\u{142}', '\u{144}', '\u{f3}', '\u{15b}', '\u{17a}', '\u{17c}'];
         for (file, src) in sources {

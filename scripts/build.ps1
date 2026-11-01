@@ -1,4 +1,4 @@
-﻿# Builds a release, assembles a portable folder dist\NopePDF\{nopepdf.exe, pdfium.dll}
+﻿# Builds a release, assembles a portable folder dist\NopePDF\{nopepdf.exe, nopepdf-cli.exe, pdfium.dll}
 # and, when Inno Setup is installed, the installer dist\NopePDF-setup-<version>.exe.
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
@@ -23,6 +23,7 @@ try {
     if (Test-Path $dist) { Remove-Item $dist -Recurse -Force }
     New-Item -ItemType Directory -Force (Join-Path $dist "licenses") | Out-Null
     Copy-Item "target\release\nopepdf.exe" $dist
+    Copy-Item "target\release\nopepdf-cli.exe" $dist
     Copy-Item "vendor\pdfium\bin\pdfium.dll" $dist
     Copy-Item "LICENSE" (Join-Path $dist "LICENSE.txt")
     # PDFium and the libraries bundled into it require their notices to ship with the binary.

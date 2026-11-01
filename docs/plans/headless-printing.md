@@ -1,6 +1,8 @@
 # Plan: headless command-line printing
 
-- **Status:** planned, not started
+- **Status:** steps 1–5 done (2026-11-01); waiting for checks on a real duplex printer and
+  on macOS/Linux (see the last section). Deviations from the design are listed under
+  *As built*.
 - **Written:** 2026-10-26
 - **Goal:** let scripts and AI agents print a PDF, list printers, read document info and
   render page previews without any window or dialog, with a reliable exit code. It is a
@@ -79,10 +81,9 @@ truncated jobs, because the process ends only after every page was handed over.
 - Printer listing: `EnumPrintersW` + `GetDefaultPrinterW`.
 - Settings: `OpenPrinterW` → `DocumentPropertiesW` (query size, then fetch the default
   `DEVMODEW`) → set `dmDuplex` (`DMDUP_VERTICAL` = long edge, `DMDUP_HORIZONTAL` = short
-  edge) and `dmCopies` with the matching `dmFields` → merge back with
+  edge) and `dmCopies` = 1 with the matching `dmFields` → merge back with
   `DocumentPropertiesW(DM_IN_BUFFER | DM_OUT_BUFFER)` → `CreateDCW("WINSPOOL", name, None, devmode)`.
-- Check duplex support with `DeviceCapabilitiesW(DC_DUPLEX)`. If the driver ignores
-  `dmCopies`, print the range N times.
+- Check duplex support with `DeviceCapabilitiesW(DC_DUPLEX)`. Copies: see *As built*.
 - Requires the `Win32_Graphics_Printing` feature of the `windows` crate.
 - Printing still rasterizes pages (`render_page`). Printing to
   *Microsoft Print to PDF* therefore produces image-only PDFs; fine for tests, not for
@@ -101,7 +102,27 @@ truncated jobs, because the process ends only after every page was handed over.
 
 - Done: printing reports errors instead of skipping pages (`PrintError`), and a job runs
   on its own print thread fed by the worker.
-- `main.rs`: move PDFium loading into the shared code.
+- Done: PDFium loading and document opening moved into the shared code (`pdf.rs`).
+
+## As built (2026-11-01)
+
+- Shared code is the library target (`src/lib.rs`: `pdf`, `print`, `i18n`); the viewer
+  and `src/bin/nopepdf-cli.rs` use it.
+- Copies are made by sending the pages again (collated), not through `dmCopies`, because
+  drivers handle copies unevenly. When printing two-sided with an odd page count, an empty
+  page separates the copies so none starts on the back of a sheet. CUPS uses `lp -n`.
+- `--pages` is printed in page order with duplicates removed, the same on Windows and
+  CUPS (`lp -P` always prints in page order).
+- Added `--output FILE` (Windows: writes the job to a file, so PDF and XPS printers need
+  no "Save as" dialog; exit 5 on CUPS), `--password`, `--version`, and `--json` for errors:
+  `{"error": ..., "exit_code": ...}` on stdout, the message also on stderr.
+- `--dry-run` checks the file, pages and printer name; it does not check duplex support.
+- Two-sided support is checked with `DeviceCapabilitiesW(DC_DUPLEX)`; asking for `long` or
+  `short` on a printer without it exits with 5.
+- The installer copies `nopepdf-cli.exe` next to `nopepdf.exe` but does not add it to
+  `PATH` (backlog).
+- The CUPS backend compiles for Linux and macOS (`cargo check --target`) but has not run
+  on a real system yet.
 
 ## Steps
 
