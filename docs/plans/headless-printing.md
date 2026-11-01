@@ -17,8 +17,10 @@
 4. The release build uses the Windows GUI subsystem. PowerShell and cmd do not wait for
    such a program and do not get its exit code, and it has no console for output.
 
-The rendering and printing core already exists: `print::print_document` prints a page
-range to any printer device context (auto-rotation, fit to page, rendering at up to 300 DPI).
+The rendering and printing core already exists (since 2026-11-01): `print::render_page`
+renders one page for a printer (auto-rotation, fit to page, up to 300 DPI) on any platform,
+and `print::spawn_printer` runs a job on its own thread, taking pages over a channel and
+returning a `PrintError` kind. A failed page aborts the whole job. The CLI reuses both.
 
 ## Design
 
@@ -82,7 +84,7 @@ truncated jobs, because the process ends only after every page was handed over.
 - Check duplex support with `DeviceCapabilitiesW(DC_DUPLEX)`. If the driver ignores
   `dmCopies`, print the range N times.
 - Requires the `Win32_Graphics_Printing` feature of the `windows` crate.
-- Printing still rasterizes pages (current `print_document`). Printing to
+- Printing still rasterizes pages (`render_page`). Printing to
   *Microsoft Print to PDF* therefore produces image-only PDFs; fine for tests, not for
   converting documents.
 
@@ -97,17 +99,15 @@ truncated jobs, because the process ends only after every page was handed over.
 
 ### Changes needed in existing code
 
-- `print_pages` must report errors instead of skipping pages: today a page that fails to
-  render is skipped with `continue`, and the results of `StretchDIBits`, `EndPage` and
-  `EndDoc` are not checked. In headless mode this would silently produce incomplete prints.
+- Done: printing reports errors instead of skipping pages (`PrintError`), and a job runs
+  on its own print thread fed by the worker.
 - `main.rs`: move PDFium loading into the shared code.
 
 ## Steps
 
 1. Shared code into a library target; add the `nopepdf-cli` binary, argument parsing,
    exit codes. Update `build.ps1` and the installer to ship it.
-2. `print` with the default settings, `printers`, error reporting in `print_pages`;
-   Windows and CUPS backends.
+2. `print` with the default settings and `printers`; Windows and CUPS backends.
 3. Duplex and copies (DEVMODE on Windows, `lp` options on CUPS).
 4. `info`, `render`, `--json`, `--dry-run`.
 5. Tests: argument and page-range parsing (unit), an end-to-end print to

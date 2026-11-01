@@ -6,6 +6,26 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- English user interface next to Polish. NopePDF starts in the system language and the
+  🌐 button switches languages immediately; the choice is saved in the settings.
+  Translations are TOML files in `locales/`; `NOPEPDF_LANG` overrides the language at
+  start-up.
+- The installer and `scripts/register.ps1` name the file type and the app in English or
+  Polish.
+
+### Changed
+- Printing no longer freezes the viewer: pages are rendered one at a time between view
+  updates and a separate print thread talks to the printer, so scrolling and rendering
+  keep working while a job is spooled or a PDF printer's "Save as" dialog is open.
+- Closing a document cancels its unfinished print job; cancelling the "Save as" dialog
+  of a PDF printer shows "Printing cancelled" instead of an error.
+
+### Fixed
+- The print dialog is owned by the main window, so it is modal and can no longer open
+  behind NopePDF.
+- Search counter uses correct plural forms ("1 wynik", "2 wyniki", "5 wyników").
+
 ## [0.2.0] - 2026-10-28
 
 First public release.

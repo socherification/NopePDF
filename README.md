@@ -9,7 +9,6 @@ and is written in Rust so the same code base can run on Windows, macOS and Linux
 
 > **Status:** early (v0.2). Windows is the primary, tested platform. The code is portable,
 > but macOS and Linux builds are not tested yet and printing there is not implemented.
-> The user interface is currently in Polish; a multilingual UI (English first) is planned.
 
 ## Features
 
@@ -25,7 +24,9 @@ and is written in Rust so the same code base can run on Windows, macOS and Linux
   (you can overwrite, rename or delete it while it is open)
 - When the file changes on disk, asks whether to reload (or always reloads it, handy with LaTeX)
 - Password-protected PDFs
-- Printing via the system print dialog (Windows)
+- Printing via the system print dialog (Windows); the viewer keeps working while a job prints
+- User interface in English and Polish: follows the system language, switchable with the 🌐
+  button
 
 Measured on Windows: ~7.5 MB executable plus ~7.5 MB PDFium, ~130 MB RAM with a typical
 paper open, start-up with a file in under a second.
@@ -104,14 +105,32 @@ the executable (`build.ps1` does this in `dist\NopePDF\`).
 cargo test
 ```
 
-The printing test needs the *Microsoft Print to PDF* printer and a sample file at
-`testdata/attention.pdf` (any PDF with 3+ pages; sample PDFs are not committed). It is
-skipped when the file is missing.
+Tests that use PDFium need it in `vendor/pdfium` (run the fetch script first). Tests that
+need a sample document use `testdata/attention.pdf` (any PDF with 15+ pages; sample PDFs
+are not committed) and are skipped when it is missing. Printing tests print only to the
+*Microsoft Print to PDF* printer, into a temporary file.
 
 ## Settings
 
 Stored as TOML in the user config directory (`%APPDATA%\NopePDF\settings.toml` on Windows):
-theme, inverted page colors, sidebar state and the per-file history (page, zoom, fit mode).
+theme, inverted page colors, sidebar state, UI language (empty = system language) and the
+per-file history (page, zoom, fit mode).
+
+## Translations
+
+Available languages: English, Polish. Translations live in `locales/`, one TOML file per
+language, embedded into the executable. To add a language:
+
+1. Copy `locales/en.toml` to `locales/<code>.toml` (e.g. `de.toml`) and translate the
+   values. Keep the keys and the `{placeholders}`; set `[meta] name` to the language's own
+   name.
+2. Register the file and its plural rule in `LANGUAGES` in `src/i18n.rs`. Plural entries
+   need every form the rule returns (English: `one`, `other`; Polish: `one`, `few`, `many`).
+3. Run `cargo test`: it checks that every file has the same keys and placeholders as
+   English. Start the app with `NOPEPDF_LANG=<code>` to see the result, then open a pull
+   request.
+
+Right-to-left languages are not supported yet (egui has no RTL layout).
 
 ## Roadmap
 

@@ -1,0 +1,86 @@
+# Polish. Keys and {placeholders} must match en.toml.
+# Plural categories for Polish: one (1), few (2-4, 22-24, ...), many (0, 5-21, 25-31, ...).
+
+[meta]
+name = "Polski"
+
+[app]
+tagline = "Lekki czytnik PDF"
+
+[toolbar]
+open = "Otwórz"
+sidebar = "Panel boczny"
+prev_page = "Poprzednia strona"
+next_page = "Następna strona"
+zoom_out = "Pomniejsz"
+zoom_in = "Powiększ"
+fit_width = "Dopasuj szerokość"
+fit_page = "Cała strona"
+rotate = "Obróć w prawo"
+search = "Szukaj"
+print = "Drukuj"
+theme = "Tryb jasny / ciemny"
+invert = "Odwróć kolory stron (do czytania nocą)"
+language = "Język"
+language_system = "Język systemu"
+
+[tabs]
+close = "Zamknij"
+
+[dialog]
+all_files = "Wszystkie pliki"
+
+[welcome]
+open = "Otwórz plik…"
+drop = "albo upuść plik PDF w tym oknie"
+recent = "Ostatnio otwierane"
+recent_page = "str. {page}"
+
+[sidebar]
+outline = "Spis treści"
+thumbs = "Miniatury"
+no_outline = "Brak spisu treści"
+untitled = "(bez tytułu)"
+
+[search]
+label = "Szukaj:"
+hint = "tekst…"
+prev = "Poprzedni"
+next = "Następny"
+close = "Zamknij"
+no_results = "Brak wyników"
+position = "{current} z {n}"
+results = { one = "{n} wynik", few = "{n} wyniki", many = "{n} wyników" }
+searching = { one = "{n} wynik… (str. {page})", few = "{n} wyniki… (str. {page})", many = "{n} wyników… (str. {page})" }
+
+[disk]
+changed = "Plik został zmieniony na dysku. Przeładować?"
+reload = "Przeładuj"
+always = "Zawsze przeładowuj ten plik"
+always_hint = "Do zamknięcia karty"
+ignore = "Ignoruj"
+reload_failed = "Nie udało się przeładować: plik może być jeszcze zapisywany"
+
+[doc]
+open_failed = "Nie udało się otworzyć pliku"
+password_title = "Dokument jest chroniony hasłem"
+wrong_password = "Nieprawidłowe hasło"
+open = "Otwórz"
+
+[print]
+printing = "Drukowanie…"
+sent = "Wysłano do drukarki"
+failed = "Błąd drukowania: {error}"
+cancelled = "Drukowanie przerwane"
+
+[error]
+invalid_pdf = "To nie jest prawidłowy plik PDF albo plik jest uszkodzony."
+unsupported_security = "Ten dokument używa nieobsługiwanego zabezpieczenia."
+read = "Nie udało się odczytać pliku: {error}"
+other = "Nieoczekiwany błąd: {error}"
+not_open = "Dokument nie jest otwarty"
+print_start = "nie udało się rozpocząć wydruku"
+print_page = "nie udało się przygotować strony {page} do wydruku"
+printer = "błąd drukarki"
+print_unsupported = "drukowanie nie jest jeszcze obsługiwane na tej platformie"
+pdfium_missing = "Nie znaleziono biblioteki PDFium."

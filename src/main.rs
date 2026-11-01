@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod i18n;
 mod instance;
 mod print;
 mod settings;
+#[cfg(test)]
+mod testutil;
 mod view;
 mod worker;
 
@@ -73,13 +76,14 @@ fn main() -> eframe::Result {
         instance::Startup::Primary(p) => p,
     };
     let settings = settings::Settings::load();
+    i18n::set_language(&i18n::startup_language(&settings.language));
 
     let pdfium = match load_pdfium() {
         Ok(p) => p,
         Err(e) => {
             rfd::MessageDialog::new()
                 .set_title("NopePDF")
-                .set_description(format!("Nie znaleziono biblioteki PDFium (pdfium.dll).\n\n{e}"))
+                .set_description(format!("{}\n\n{e}", i18n::tr("error.pdfium_missing")))
                 .set_level(rfd::MessageLevel::Error)
                 .show();
             std::process::exit(1);
@@ -106,7 +110,8 @@ fn main() -> eframe::Result {
             cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
             let worker = worker::spawn(pdfium, cc.egui_ctx.clone());
             let ipc = primary.map(|p| instance::serve(p, cc.egui_ctx.clone()));
-            Ok(Box::new(app::App::new(worker, settings, files, ipc)))
+            let window = print::owner_of(cc);
+            Ok(Box::new(app::App::new(worker, settings, files, ipc, window)))
         }),
     )
 }

@@ -1,7 +1,8 @@
 //! A single open document: layout, scrolling, zooming, text selection,
 //! links, search highlights and the sidebar (outline + thumbnails).
 
-use crate::worker::{DocId, Job, Link, LinkTarget, NRect, OutlineItem, TextChar};
+use crate::i18n::tr;
+use crate::worker::{DocId, Job, Link, LinkTarget, NRect, OpenError, OutlineItem, TextChar};
 use eframe::egui::{self, *};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -43,7 +44,7 @@ impl Fit {
 pub enum LoadState {
     Loading,
     Ready,
-    Failed(String),
+    Failed(OpenError),
     NeedsPassword { wrong: bool },
 }
 
@@ -868,7 +869,7 @@ impl Doc {
 
     pub fn show_outline(&mut self, ui: &mut Ui) {
         if self.outline.is_empty() {
-            ui.weak("Brak spisu treści");
+            ui.weak(tr("sidebar.no_outline"));
             return;
         }
         let mut goto = None;
@@ -1004,7 +1005,7 @@ fn same_line(a: &NRect, b: &NRect) -> bool {
 
 fn outline_items(ui: &mut Ui, items: &[OutlineItem], goto: &mut Option<usize>, depth: usize) {
     for (k, it) in items.iter().enumerate() {
-        let title = if it.title.trim().is_empty() { "(bez tytułu)" } else { it.title.trim() };
+        let title = if it.title.trim().is_empty() { tr("sidebar.untitled") } else { it.title.trim() };
         if it.children.is_empty() {
             // Align leaf titles with the text of collapsible siblings (past their arrow).
             let indent = ui.spacing().icon_width + ui.spacing().icon_spacing;

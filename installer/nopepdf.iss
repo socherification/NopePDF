@@ -42,6 +42,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 polish.DefaultApps=Otwórz ustawienia, aby ustawić NopePDF jako domyślną przeglądarkę PDF
 english.DefaultApps=Open Settings to make NopePDF the default PDF viewer
+polish.FileTypeName=Dokument PDF
+english.FileTypeName=PDF Document
+polish.AppDescription=Lekki czytnik PDF
+english.AppDescription=Lightweight PDF reader
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -58,7 +62,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: deskto
 
 [Registry]
 ; File type handler (shown in "Open with").
-Root: HKA; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueData: "Dokument PDF"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\{#ProgId}"; ValueType: string; ValueData: "{cm:FileTypeName}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\{#ProgId}\DefaultIcon"; ValueType: string; ValueData: """{app}\{#MyAppExe}"",0"
 Root: HKA; Subkey: "Software\Classes\{#ProgId}\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExe}"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "{#ProgId}"; ValueData: ""; Flags: uninsdeletevalue
@@ -68,7 +72,7 @@ Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExe}\SupportedTypes"; V
 ; Listed under Settings > Default apps.
 Root: HKA; Subkey: "Software\{#MyAppName}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "{#MyAppName}"
-Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Lekki czytnik PDF"
+Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "{cm:AppDescription}"
 Root: HKA; Subkey: "Software\{#MyAppName}\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "{#ProgId}"
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: "Software\{#MyAppName}\Capabilities"; Flags: uninsdeletevalue
 ; Lets "nopepdf" be started from the Run dialog (Win+R).

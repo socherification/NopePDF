@@ -1,8 +1,10 @@
 //! Application shell: tabs, toolbar, sidebar, shortcuts, file watching.
 
+use crate::i18n::{self, tr, tr_args, tr_count, with_keys};
+use crate::print::PrintError;
 use crate::settings::{RecentFile, Settings};
 use crate::view::{Doc, Fit, LoadState, PageTex, ViewCtx};
-use crate::worker::{Cmd, DocId, Event, Job, WorkerHandle};
+use crate::worker::{Cmd, DocId, Event, Job, OpenError, WorkerHandle};
 use eframe::egui::{self, *};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -28,6 +30,8 @@ pub struct App {
     last_title: String,
     /// Files forwarded from later launches (single-instance).
     ipc: Option<std::sync::mpsc::Receiver<Vec<PathBuf>>>,
+    /// Native handle of the main window, the owner of the print dialog.
+    window: Option<isize>,
 }
 
 impl App {
@@ -36,6 +40,7 @@ impl App {
         settings: Settings,
         files: Vec<PathBuf>,
         ipc: Option<std::sync::mpsc::Receiver<Vec<PathBuf>>>,
+        window: Option<isize>,
     ) -> Self {
         let mut app = App {
             worker,
@@ -51,6 +56,7 @@ impl App {
             fullscreen: false,
             last_title: String::new(),
             ipc,
+            window,
         };
         for f in files {
             app.open(f);
@@ -85,7 +91,7 @@ impl App {
     }
 
     fn open_dialog(&mut self) {
-        let mut dlg = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).add_filter("Wszystkie pliki", &["*"]);
+        let mut dlg = rfd::FileDialog::new().add_filter("PDF", &["pdf"]).add_filter(tr("dialog.all_files"), &["*"]);
         if let Some(dir) = self.docs.get(self.active).and_then(|d| d.path.parent()) {
             dlg = dlg.set_directory(dir);
         }
@@ -152,18 +158,18 @@ impl App {
                         self.side_tab = SideTab::Thumbs;
                     }
                 }
-                Event::OpenFailed { doc, error, needs_password } => {
+                Event::OpenFailed { doc, error } => {
                     let Some(d) = self.doc_by_id(doc) else { continue };
                     if let Some(old) = d.reload_from.take() {
                         // Reload failed (file probably mid-write): keep showing the old version.
                         d.id = old;
                         if !d.auto_reload {
                             d.disk_changed = true;
-                            self.set_status("Nie udało się przeładować — plik może być jeszcze zapisywany");
+                            self.set_status(tr("disk.reload_failed"));
                         }
                         continue;
                     }
-                    d.state = if needs_password {
+                    d.state = if error == OpenError::NeedsPassword {
                         LoadState::NeedsPassword { wrong: !d.password.is_empty() }
                     } else {
                         LoadState::Failed(error)
@@ -202,8 +208,9 @@ impl App {
                     }
                 }
                 Event::PrintDone(res) => match res {
-                    Ok(()) => self.set_status("Wysłano do drukarki"),
-                    Err(e) => self.set_status(format!("Błąd drukowania: {e}")),
+                    Ok(()) => self.set_status(tr("print.sent")),
+                    Err(PrintError::Cancelled) => self.set_status(tr("print.cancelled")),
+                    Err(e) => self.set_status(tr_args("print.failed", &[("error", &e.message())])),
                 },
             }
         }
@@ -286,12 +293,12 @@ impl App {
     fn print(&mut self) {
         let Some(d) = self.docs.get(self.active).filter(|d| d.is_ready()) else { return };
         if !cfg!(windows) {
-            self.set_status("Drukowanie nie jest jeszcze obsługiwane na tej platformie");
+            self.set_status(tr_args("print.failed", &[("error", &PrintError::Unsupported.message())]));
             return;
         }
-        if let Some(job) = crate::print::show_dialog(d.page_count(), d.current_page(), &d.name) {
+        if let Some(job) = crate::print::show_dialog(self.window, d.page_count(), d.current_page(), &d.name) {
             let _ = self.worker.tx.send(Cmd::Print { doc: d.id, job });
-            self.set_status("Drukowanie…");
+            self.set_status(tr("print.printing"));
         }
     }
 
@@ -448,7 +455,11 @@ impl App {
                     if r.middle_clicked() {
                         close = Some(i);
                     }
-                    if ui.add(Button::new("✕").frame(false).small()).on_hover_text("Zamknij (Ctrl+W)").clicked() {
+                    if ui
+                        .add(Button::new("✕").frame(false).small())
+                        .on_hover_text(with_keys(tr("tabs.close"), "Ctrl+W"))
+                        .clicked()
+                    {
                         close = Some(i);
                     }
                     ui.separator();
@@ -462,10 +473,14 @@ impl App {
 
     fn toolbar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            if ui.button("📂").on_hover_text("Otwórz (Ctrl+O)").clicked() {
+            if ui.button("📂").on_hover_text(with_keys(tr("toolbar.open"), "Ctrl+O")).clicked() {
                 self.open_dialog();
             }
-            if ui.selectable_label(self.settings.sidebar, "☰").on_hover_text("Panel boczny (Ctrl+B)").clicked() {
+            if ui
+                .selectable_label(self.settings.sidebar, "☰")
+                .on_hover_text(with_keys(tr("toolbar.sidebar"), "Ctrl+B"))
+                .clicked()
+            {
                 self.settings.sidebar = !self.settings.sidebar;
             }
             ui.separator();
@@ -475,7 +490,7 @@ impl App {
             if let Some(d) = self.docs.get_mut(self.active).filter(|d| d.is_ready()) {
                 let n = d.page_count();
                 let cur = d.current_page();
-                if ui.button("⏶").on_hover_text("Poprzednia strona").clicked() && cur > 0 {
+                if ui.button("⏶").on_hover_text(tr("toolbar.prev_page")).clicked() && cur > 0 {
                     d.goto_page(cur - 1);
                 }
                 let te = TextEdit::singleline(&mut self.page_input)
@@ -499,12 +514,12 @@ impl App {
                     self.page_input = format!("{}", cur + 1);
                 }
                 ui.label(format!("/ {n}"));
-                if ui.button("⏷").on_hover_text("Następna strona").clicked() && cur + 1 < n {
+                if ui.button("⏷").on_hover_text(tr("toolbar.next_page")).clicked() && cur + 1 < n {
                     d.goto_page(cur + 1);
                 }
                 ui.separator();
 
-                if ui.button("−").on_hover_text("Pomniejsz (Ctrl+-)").clicked() {
+                if ui.button("−").on_hover_text(with_keys(tr("toolbar.zoom_out"), "Ctrl+-")).clicked() {
                     d.zoom_step(false);
                 }
                 ui.menu_button(format!("{:.0}%", d.zoom * 100.0), |ui| {
@@ -516,24 +531,35 @@ impl App {
                         }
                     }
                 });
-                if ui.button("+").on_hover_text("Powiększ (Ctrl++)").clicked() {
+                if ui.button("+").on_hover_text(with_keys(tr("toolbar.zoom_in"), "Ctrl++")).clicked() {
                     d.zoom_step(true);
                 }
-                if ui.selectable_label(d.fit == Fit::Width, "↔").on_hover_text("Dopasuj szerokość (Ctrl+2)").clicked()
+                if ui
+                    .selectable_label(d.fit == Fit::Width, "↔")
+                    .on_hover_text(with_keys(tr("toolbar.fit_width"), "Ctrl+2"))
+                    .clicked()
                 {
                     d.set_fit(Fit::Width);
                 }
-                if ui.selectable_label(d.fit == Fit::Page, "⬜").on_hover_text("Cała strona (Ctrl+0)").clicked() {
+                if ui
+                    .selectable_label(d.fit == Fit::Page, "⬜")
+                    .on_hover_text(with_keys(tr("toolbar.fit_page"), "Ctrl+0"))
+                    .clicked()
+                {
                     d.set_fit(Fit::Page);
                 }
-                if ui.button("⟳").on_hover_text("Obróć w prawo (Ctrl+R)").clicked() {
+                if ui.button("⟳").on_hover_text(with_keys(tr("toolbar.rotate"), "Ctrl+R")).clicked() {
                     d.rotate(true);
                 }
                 ui.separator();
-                if ui.selectable_label(d.search.open, "🔍").on_hover_text("Szukaj (Ctrl+F)").clicked() {
+                if ui
+                    .selectable_label(d.search.open, "🔍")
+                    .on_hover_text(with_keys(tr("toolbar.search"), "Ctrl+F"))
+                    .clicked()
+                {
                     search_toggle = true;
                 }
-                if ui.button("🖶").on_hover_text("Drukuj (Ctrl+P)").clicked() {
+                if ui.button("🖶").on_hover_text(with_keys(tr("toolbar.print"), "Ctrl+P")).clicked() {
                     do_print = true;
                 }
             }
@@ -552,15 +578,13 @@ impl App {
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                self.language_menu(ui);
                 let theme = if self.settings.dark { "☀" } else { "🌙" };
-                if ui.button(theme).on_hover_text("Tryb jasny / ciemny").clicked() {
+                if ui.button(theme).on_hover_text(tr("toolbar.theme")).clicked() {
                     self.settings.dark = !self.settings.dark;
                     apply_theme(ui.ctx(), self.settings.dark);
                 }
-                if ui
-                    .selectable_label(self.settings.invert_pages, "◐")
-                    .on_hover_text("Odwróć kolory stron (do czytania nocą)")
-                    .clicked()
+                if ui.selectable_label(self.settings.invert_pages, "◐").on_hover_text(tr("toolbar.invert")).clicked()
                 {
                     self.settings.invert_pages = !self.settings.invert_pages;
                 }
@@ -568,15 +592,40 @@ impl App {
         });
     }
 
+    /// Language picker: "System language" or one of the translations; applies immediately.
+    fn language_menu(&mut self, ui: &mut Ui) {
+        let mut chosen = None;
+        ui.menu_button("🌐", |ui| {
+            if ui.selectable_label(self.settings.language.is_empty(), tr("toolbar.language_system")).clicked() {
+                chosen = Some(String::new());
+            }
+            ui.separator();
+            for (code, name) in i18n::languages() {
+                if ui.selectable_label(self.settings.language == code, name).clicked() {
+                    chosen = Some(code.to_string());
+                }
+            }
+        })
+        .response
+        .on_hover_text(tr("toolbar.language"));
+        if let Some(code) = chosen {
+            let locale = if code.is_empty() { i18n::system_language() } else { code.clone() };
+            i18n::set_language(&locale);
+            self.settings.language = code;
+            self.settings.save();
+            ui.close();
+        }
+    }
+
     fn disk_bar(&mut self, ui: &mut Ui) {
         let (mut reload, mut always, mut ignore) = (false, false, false);
         ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new("⚠").color(ui.visuals().warn_fg_color));
-            ui.label("Plik został zmieniony na dysku. Przeładować?");
-            reload = ui.button("Przeładuj (F5)").clicked();
-            always = ui.button("Zawsze przeładowuj ten plik").on_hover_text("Do zamknięcia karty").clicked();
-            ignore = ui.button("Ignoruj").clicked();
+            ui.label(tr("disk.changed"));
+            reload = ui.button(with_keys(tr("disk.reload"), "F5")).clicked();
+            always = ui.button(tr("disk.always")).on_hover_text(tr("disk.always_hint")).clicked();
+            ignore = ui.button(tr("disk.ignore")).clicked();
         });
         ui.add_space(3.0);
         let i = self.active;
@@ -594,8 +643,8 @@ impl App {
         let mut action = None;
         let d = &mut self.docs[self.active];
         ui.horizontal(|ui| {
-            ui.label("Szukaj:");
-            let r = ui.add(TextEdit::singleline(&mut d.search.query).desired_width(240.0).hint_text("tekst…"));
+            ui.label(tr("search.label"));
+            let r = ui.add(TextEdit::singleline(&mut d.search.query).desired_width(240.0).hint_text(tr("search.hint")));
             if d.search.focus {
                 r.request_focus();
                 d.search.focus = false;
@@ -604,25 +653,26 @@ impl App {
                 action = Some(!ui.input(|i| i.modifiers.shift));
                 r.request_focus();
             }
-            if ui.button("⏶").on_hover_text("Poprzedni (Shift+Enter)").clicked() {
+            if ui.button("⏶").on_hover_text(with_keys(tr("search.prev"), "Shift+Enter")).clicked() {
                 action = Some(false);
             }
-            if ui.button("⏷").on_hover_text("Następny (Enter)").clicked() {
+            if ui.button("⏷").on_hover_text(with_keys(tr("search.next"), "Enter")).clicked() {
                 action = Some(true);
             }
             let s = &d.search;
             if !s.searched.is_empty() {
                 let n = s.hits.len();
                 let txt = match (s.current, s.done) {
-                    (_, false) => format!("{n} wyników… (str. {})", s.progress + 1),
-                    (_, true) if n == 0 => "Brak wyników".to_string(),
-                    (Some(c), true) => format!("{} z {n}", c + 1),
-                    (None, true) => format!("{n} wyników"),
+                    (_, false) => tr_count("search.searching", n, &[("page", &(s.progress + 1))]),
+                    (_, true) if n == 0 => tr("search.no_results").to_string(),
+                    (Some(c), true) => tr_args("search.position", &[("current", &(c + 1)), ("n", &n)]),
+                    (None, true) => tr_count("search.results", n, &[]),
                 };
                 ui.weak(txt);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.add(Button::new("✕").frame(false)).on_hover_text("Zamknij (Esc)").clicked() {
+                if ui.add(Button::new("✕").frame(false)).on_hover_text(with_keys(tr("search.close"), "Esc")).clicked()
+                {
                     action = None;
                     d.search.open = false;
                 }
@@ -642,25 +692,29 @@ impl App {
             ui.add_space(ui.available_height() * 0.18);
             ui.heading(RichText::new("NopePDF").size(32.0));
             ui.add_space(6.0);
-            ui.weak("Lekki czytnik PDF");
+            ui.weak(tr("app.tagline"));
             ui.add_space(24.0);
             if ui
-                .add(Button::new(RichText::new("📂  Otwórz plik…  (Ctrl+O)").size(16.0)).min_size(vec2(240.0, 36.0)))
+                .add(
+                    Button::new(RichText::new(format!("📂  {}", with_keys(tr("welcome.open"), "Ctrl+O"))).size(16.0))
+                        .min_size(vec2(240.0, 36.0)),
+                )
                 .clicked()
             {
                 open_dialog = true;
             }
             ui.add_space(8.0);
-            ui.weak("albo upuść plik PDF w tym oknie");
+            ui.weak(tr("welcome.drop"));
             let recent: Vec<_> = self.settings.recent.iter().filter(|r| r.path.exists()).take(12).cloned().collect();
             if !recent.is_empty() {
                 ui.add_space(28.0);
-                ui.label(RichText::new("Ostatnio otwierane").strong());
+                ui.label(RichText::new(tr("welcome.recent")).strong());
                 ui.add_space(4.0);
                 for r in recent {
                     let name = r.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    let page = tr_args("welcome.recent_page", &[("page", &(r.page + 1))]);
                     if ui
-                        .add(Button::new(format!("{name}   —   str. {}", r.page + 1)).frame(false))
+                        .add(Button::new(format!("{name}   —   {page}")).frame(false))
                         .on_hover_text(r.path.display().to_string())
                         .clicked()
                     {
@@ -749,8 +803,8 @@ impl eframe::App for App {
                 Panel::left("sidebar").resizable(true).default_size(200.0).size_range(120.0..=500.0).show(ui, |ui| {
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.side_tab, SideTab::Outline, "Spis treści");
-                        if ui.selectable_value(&mut self.side_tab, SideTab::Thumbs, "Miniatury").clicked() {
+                        ui.selectable_value(&mut self.side_tab, SideTab::Outline, tr("sidebar.outline"));
+                        if ui.selectable_value(&mut self.side_tab, SideTab::Thumbs, tr("sidebar.thumbs")).clicked() {
                             self.docs[self.active].thumbs_follow = true;
                         }
                     });
@@ -779,10 +833,10 @@ impl eframe::App for App {
                     ui.centered_and_justified(|ui| ui.spinner());
                 }
                 LoadState::Failed(e) => {
-                    let e = e.clone();
+                    let e = e.message();
                     ui.vertical_centered(|ui| {
                         ui.add_space(80.0);
-                        ui.heading("Nie udało się otworzyć pliku");
+                        ui.heading(tr("doc.open_failed"));
                         ui.add_space(8.0);
                         ui.label(d.path.display().to_string());
                         ui.weak(e);
@@ -793,17 +847,17 @@ impl eframe::App for App {
                     let mut submit = false;
                     ui.vertical_centered(|ui| {
                         ui.add_space(80.0);
-                        ui.heading("Dokument jest chroniony hasłem");
+                        ui.heading(tr("doc.password_title"));
                         ui.add_space(8.0);
                         if wrong {
-                            ui.colored_label(ui.visuals().error_fg_color, "Nieprawidłowe hasło");
+                            ui.colored_label(ui.visuals().error_fg_color, tr("doc.wrong_password"));
                         }
                         let r = ui.add(TextEdit::singleline(&mut d.password).password(true).desired_width(200.0));
                         r.request_focus();
                         if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                             submit = true;
                         }
-                        if ui.button("Otwórz").clicked() {
+                        if ui.button(tr("doc.open")).clicked() {
                             submit = true;
                         }
                     });

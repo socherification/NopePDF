@@ -1,6 +1,6 @@
 # Plan: multilingual user interface
 
-- **Status:** planned, not started
+- **Status:** steps 1–5 done (2026-11-01); step 6 (CJK font fallback) waits for a request
 - **Written:** 2026-10-26
 - **Goal:** the UI is available in several languages, starts in the system language and
   can be switched in the app. English and Polish first; adding a language later means
@@ -8,7 +8,7 @@
 - **Constraints:** portable (same mechanism on Windows, macOS and Linux) and light (no
   large i18n framework, no noticeable effect on start time or binary size).
 
-## Current state
+## State before the change
 
 - All UI text is hard-coded Polish: about 55 strings in `app.rs`, `view.rs`, `worker.rs`,
   `print.rs` and `main.rs` (tooltips, buttons, status messages, error screens, welcome
@@ -65,6 +65,8 @@
   macOS and Linux), mapped to the closest available translation, otherwise English.
 - Override: a language picker in the app (toolbar menu), saved as `language` in
   `settings.toml`. Switching applies immediately, without restart.
+- The `NOPEPDF_LANG` environment variable (e.g. `NOPEPDF_LANG=en`) overrides both at
+  start-up, for translators and for testing.
 
 ### Errors from the worker
 

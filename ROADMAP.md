@@ -21,7 +21,6 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 | Item | Status | Plan |
 |---|---|---|
 | Headless command-line printing (`nopepdf-cli --print`), printer listing, duplex and copies, document info and page rendering for scripts and AI agents; CUPS backend for macOS/Linux | Planned | [headless-printing](docs/plans/headless-printing.md) |
-| Multilingual UI: English and Polish first, system language by default, switchable in the app, new languages by adding a translation file | Planned | [localization](docs/plans/localization.md) |
 
 ## Backlog
 
@@ -30,6 +29,8 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 - Printing from the GUI on macOS and Linux (can reuse the CUPS backend from the
   headless-printing plan).
 - Build and test on macOS and Linux; CI for all three platforms.
+- Font fallback for Chinese, Japanese and Korean translations (step 6 of the
+  [localization](docs/plans/localization.md) plan), when such a translation is contributed.
 - Release automation (GitHub Actions building the installer and portable zip).
 - Code signing for the Windows installer (avoids the SmartScreen warning).
 
@@ -37,9 +38,6 @@ Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md); detailed work plans 
 
 Found in the review of the initial import (2026-10-27); not fixed yet.
 
-- Printing runs on the PDFium worker thread, so the app stops rendering while a job is
-  printed or a "Save as" dialog of a PDF printer is open. Print page by page instead.
-- The print dialog has no owner window, so it is not modal and can open behind NopePDF.
 - Settings are not saved atomically, and on Linux a non-UTF-8 file path in the history
   stops settings from being saved.
 - Forwarded file paths are sent one per line as UTF-8, so names containing a newline or
@@ -62,6 +60,15 @@ Found in the review of the initial import (2026-10-27); not fixed yet.
 - Forms and annotations: low priority, NopePDF is mainly for reading.
 
 ## Plan history
+
+### 2026-11-01: multilingual UI and printing fixes done
+- Agreed order after v0.2.0: multilingual UI first (so later features are not translated
+  twice), then the two printing issues from the review, then headless printing.
+- Multilingual UI implemented as planned (English and Polish; steps 1–5 of the plan).
+- Printing moved off the PDFium worker: the worker renders one page at a time between view
+  renders and a print thread per job owns the printer. Chosen over page-by-page printing
+  on the worker alone, because a PDF printer's "Save as" dialog blocks inside `StartDoc`.
+  The print thread is reused by the planned `nopepdf-cli`.
 
 ### 2026-10-26: multilingual UI
 - Decision: the UI becomes multilingual (it was Polish only). English is the source and
