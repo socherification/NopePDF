@@ -8,7 +8,8 @@ engine from Chromium) for rendering and [egui](https://github.com/emilk/egui) fo
 and is written in Rust so the same code base can run on Windows, macOS and Linux.
 
 > **Status:** early (v0.2). Windows is the primary, tested platform. The code is portable,
-> but macOS and Linux builds are not tested yet and printing there is not implemented.
+> but macOS and Linux builds are not tested yet and printing from the viewer there is not
+> implemented (`nopepdf-cli` prints through CUPS).
 
 ## Features
 
@@ -27,6 +28,8 @@ and is written in Rust so the same code base can run on Windows, macOS and Linux
 - Printing via the system print dialog (Windows); the viewer keeps working while a job prints
 - User interface in English and Polish: follows the system language, switchable with the 🌐
   button
+- Command-line tool `nopepdf-cli` for scripts and AI agents: print without a dialog, list
+  printers, show document info, render pages to PNG
 
 Measured on Windows: ~7.5 MB executable plus ~7.5 MB PDFium, ~130 MB RAM with a typical
 paper open, start-up with a file in under a second.
@@ -43,6 +46,43 @@ Download from [Releases](https://github.com/socherification/NopePDF/releases):
   `scripts/register.ps1` registers a portable copy as a PDF viewer for the current user.
 
 The installer is not code-signed yet, so SmartScreen shows an "unknown publisher" warning.
+
+## Command line
+
+`nopepdf-cli` (next to `nopepdf.exe` in the install or portable folder) works without any
+window or dialog and returns a reliable exit code. Its output is always in English.
+
+```sh
+nopepdf-cli printers                                   # * marks the default printer
+nopepdf-cli info paper.pdf                             # pages, page size, metadata
+nopepdf-cli print paper.pdf --printer "Office" --pages 1-3,7 --copies 2 --duplex long
+nopepdf-cli print paper.pdf --dry-run                  # check and show, print nothing
+nopepdf-cli render paper.pdf --page 1 --out page1.png --dpi 150
+```
+
+- `print` returns only after the whole job is in the print queue. Without `--printer`
+  it uses the system default printer.
+- `--pages` takes 1-based pages and ranges (`10-` means to the end); pages are printed in
+  page order. `--copies` makes collated copies.
+- `--duplex long|short|none` sets two-sided printing; without it the printer's setting is
+  used.
+- `--output FILE` (Windows) writes the job to a file, for printers such as
+  *Microsoft Print to PDF*.
+- `--json` gives machine-readable output, and errors as `{"error": ..., "exit_code": ...}`.
+  `--password` opens protected PDFs.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success (`print`: the whole job is in the print queue) |
+| 1 | Usage error (bad arguments or page range) |
+| 2 | File not found or unreadable |
+| 3 | Not a valid PDF, or password needed |
+| 4 | Printer not found |
+| 5 | Option not supported by the printer or this platform (e.g. `--duplex`) |
+| 6 | Printing or rendering failed |
+
+On Windows, pages are printed as images at up to 300 DPI. On macOS and Linux the PDF goes
+to CUPS (`lp`) unchanged; that path is not tested yet.
 
 ## Keyboard shortcuts
 
@@ -108,7 +148,8 @@ cargo test
 Tests that use PDFium need it in `vendor/pdfium` (run the fetch script first). Tests that
 need a sample document use `testdata/attention.pdf` (any PDF with 15+ pages; sample PDFs
 are not committed) and are skipped when it is missing. Printing tests print only to the
-*Microsoft Print to PDF* printer, into a temporary file.
+*Microsoft Print to PDF* printer, into a temporary file. `tests/cli.rs` runs the
+`nopepdf-cli` executable end to end.
 
 ## Settings
 

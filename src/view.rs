@@ -1,9 +1,10 @@
 //! A single open document: layout, scrolling, zooming, text selection,
 //! links, search highlights and the sidebar (outline + thumbnails).
 
-use crate::i18n::tr;
-use crate::worker::{DocId, Job, Link, LinkTarget, NRect, OpenError, OutlineItem, TextChar};
+use crate::worker::{DocId, Job, Link, LinkTarget, NRect, OutlineItem, TextChar};
 use eframe::egui::{self, *};
+use nopepdf::i18n::tr;
+use nopepdf::pdf::OpenError;
 use std::path::PathBuf;
 use std::time::SystemTime;
 

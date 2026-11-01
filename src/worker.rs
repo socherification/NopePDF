@@ -3,9 +3,9 @@
 //! channel plus a shared, priority-ordered job queue that the UI rewrites each
 //! frame (so stale render requests are dropped automatically).
 
-use crate::i18n::{tr, tr_args};
-use crate::print::{Device, PageResult, PrintError};
 use eframe::egui;
+use nopepdf::pdf::{OpenError, open_document};
+use nopepdf::print::{Device, PageResult, PrintError};
 use pdfium_render::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ pub enum Cmd {
     #[cfg_attr(not(windows), allow(dead_code))]
     Print {
         doc: DocId,
-        job: crate::print::PrintJob,
+        job: nopepdf::print::PrintJob,
     },
     Wake,
 }
@@ -92,40 +92,6 @@ pub enum LinkTarget {
 pub struct Link {
     pub rect: NRect,
     pub target: LinkTarget,
-}
-
-/// Why a document could not be opened. The UI translates it when drawing, so a language
-/// switch also changes messages already on screen.
-#[derive(Clone, Debug, PartialEq)]
-pub enum OpenError {
-    Read(String),
-    InvalidPdf,
-    UnsupportedSecurity,
-    NeedsPassword,
-    Other(String),
-}
-
-impl OpenError {
-    fn from_pdfium(e: PdfiumError) -> Self {
-        match e {
-            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => OpenError::NeedsPassword,
-            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::FormatError) => OpenError::InvalidPdf,
-            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::SecurityError) => {
-                OpenError::UnsupportedSecurity
-            }
-            e => OpenError::Other(format!("{e:?}")),
-        }
-    }
-
-    pub fn message(&self) -> String {
-        match self {
-            OpenError::Read(e) => tr_args("error.read", &[("error", e)]),
-            OpenError::InvalidPdf => tr("error.invalid_pdf").into(),
-            OpenError::UnsupportedSecurity => tr("error.unsupported_security").into(),
-            OpenError::NeedsPassword => tr("doc.password_title").into(),
-            OpenError::Other(e) => tr_args("error.other", &[("error", e)]),
-        }
-    }
 }
 
 pub enum Event {
@@ -202,8 +168,9 @@ struct Search {
 /// print thread. Dropping the task closes the channel, which cancels an unfinished job.
 struct PrintTask {
     doc: DocId,
+    /// `PrintJob::pages`, and the index of the next one to render.
+    pages: Vec<Option<usize>>,
     next: usize,
-    to: usize,
     device: Device,
     tx: mpsc::SyncSender<PageResult>,
     /// A rendered page the print thread was not ready to take yet.
@@ -278,11 +245,7 @@ impl Worker {
         match cmd {
             Cmd::Wake => {}
             Cmd::Open { doc, path, password } => {
-                // Read the whole file into memory so no handle stays open: the file can be
-                // overwritten, renamed or deleted while it is being viewed.
-                let loaded = std::fs::read(&path).map_err(|e| OpenError::Read(e.to_string())).and_then(|bytes| {
-                    self.pdfium.load_pdf_from_byte_vec(bytes, password.as_deref()).map_err(OpenError::from_pdfium)
-                });
+                let loaded = open_document(self.pdfium, &path, password.as_deref());
                 match loaded {
                     Ok(d) => {
                         let info = doc_info(&d);
@@ -309,9 +272,9 @@ impl Worker {
                 }
                 // A rendezvous channel: at most one page waits here and one is being printed.
                 let (tx, rx) = mpsc::sync_channel(0);
-                let task = PrintTask { doc, next: job.from, to: job.to, device: job.device, tx, pending: None };
+                let task = PrintTask { doc, pages: job.pages.clone(), next: 0, device: job.device, tx, pending: None };
                 let (ev_tx, ctx) = (self.ev_tx.clone(), self.ctx.clone());
-                crate::print::spawn_printer(job, rx, move |res| {
+                nopepdf::print::spawn_printer(job, rx, move |res| {
                     let _ = ev_tx.send(Event::PrintDone(res));
                     ctx.request_repaint();
                 });
@@ -402,19 +365,20 @@ impl Worker {
         let mut t = self.prints.remove(0);
         let page = match t.pending.take() {
             Some(p) => p,
-            None => match self.docs.get(&t.doc) {
-                Some(d) => {
-                    let p = crate::print::render_page(d, t.next, &t.device);
+            None => match (self.docs.get(&t.doc), t.pages.get(t.next)) {
+                (Some(d), Some(&entry)) => {
+                    let p = nopepdf::print::render_entry(d, entry, &t.device);
                     t.next += 1;
                     p
                 }
-                None => return true,
+                // Document closed, or nothing to print: dropping the task ends the job.
+                _ => return true,
             },
         };
         let failed = page.is_err();
         match t.tx.try_send(page) {
             // Last page or an error: dropping the task closes the channel.
-            Ok(()) if failed || t.next > t.to => true,
+            Ok(()) if failed || t.next >= t.pages.len() => true,
             Ok(()) => {
                 self.prints.push(t);
                 true
@@ -565,7 +529,19 @@ fn walk(first: PdfBookmark, depth: usize, budget: &mut usize) -> Vec<OutlineItem
 mod tests {
     use super::*;
     use crate::testutil::{lock, pdfium, sample};
+    #[cfg(windows)]
+    use nopepdf::print::{PrintRequest, open_printer};
+    #[cfg(windows)]
     use std::time::Instant;
+
+    /// A job for "Microsoft Print to PDF" writing to `out`; never a physical printer.
+    #[cfg(windows)]
+    fn pdf_job(pages: Vec<usize>, out: &std::path::Path) -> nopepdf::print::PrintJob {
+        let _ = std::fs::remove_file(out);
+        let req =
+            PrintRequest { output: Some(out.to_path_buf()), ..PrintRequest::new("Microsoft Print to PDF", pages) };
+        open_printer(&req).unwrap()
+    }
 
     fn next_event(w: &WorkerHandle) -> Event {
         w.rx.recv_timeout(Duration::from_secs(60)).expect("no event from the worker")
@@ -629,7 +605,7 @@ mod tests {
         let w = spawn(pdfium, egui::Context::default());
         let n = open(&w, 1, input).unwrap().page_sizes.len();
         let out = std::env::temp_dir().join("nopepdf-worker-print-test.pdf");
-        w.tx.send(Cmd::Print { doc: 1, job: crate::print::pdf_printer_job(0, n - 1, &out) }).unwrap();
+        w.tx.send(Cmd::Print { doc: 1, job: pdf_job((0..n).collect(), &out) }).unwrap();
         // The view asks for a page while the job is running; it must not wait for the whole job.
         std::thread::sleep(Duration::from_millis(500));
         let render = Job::Render { doc: 1, page: n / 2, scale: 1.0, rotation: 0, invert: false, thumb: false };
@@ -660,7 +636,7 @@ mod tests {
         let w = spawn(pdfium, egui::Context::default());
         let n = open(&w, 1, input).unwrap().page_sizes.len();
         let out = std::env::temp_dir().join("nopepdf-worker-cancel-test.pdf");
-        w.tx.send(Cmd::Print { doc: 1, job: crate::print::pdf_printer_job(0, n - 1, &out) }).unwrap();
+        w.tx.send(Cmd::Print { doc: 1, job: pdf_job((0..n).collect(), &out) }).unwrap();
         w.tx.send(Cmd::Close { doc: 1 }).unwrap();
         let result = loop {
             if let Event::PrintDone(r) = next_event(&w) {
@@ -678,7 +654,7 @@ mod tests {
         let Some(pdfium) = pdfium() else { return };
         let w = spawn(pdfium, egui::Context::default());
         let out = std::env::temp_dir().join("nopepdf-worker-notopen-test.pdf");
-        w.tx.send(Cmd::Print { doc: 42, job: crate::print::pdf_printer_job(0, 0, &out) }).unwrap();
+        w.tx.send(Cmd::Print { doc: 42, job: pdf_job(vec![0], &out) }).unwrap();
         let result = loop {
             if let Event::PrintDone(r) = next_event(&w) {
                 break r;

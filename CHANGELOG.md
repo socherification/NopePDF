@@ -13,6 +13,12 @@ uses [Semantic Versioning](https://semver.org/).
   start-up.
 - The installer and `scripts/register.ps1` name the file type and the app in English or
   Polish.
+- `nopepdf-cli`, a command-line tool for scripts and AI agents: `print` without a dialog
+  (printer, pages, collated copies, two-sided, `--dry-run`, `--output` to a file),
+  `printers`, `info` and `render` (page to PNG), with `--json` output and documented exit
+  codes. It returns only after the whole job is in the print queue. Windows prints through
+  GDI; macOS and Linux hand the PDF to CUPS (not tested yet). Shipped in the installer and
+  the portable folder.
 
 ### Changed
 - Printing no longer freezes the viewer: pages are rendered one at a time between view

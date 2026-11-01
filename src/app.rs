@@ -1,11 +1,12 @@
 //! Application shell: tabs, toolbar, sidebar, shortcuts, file watching.
 
-use crate::i18n::{self, tr, tr_args, tr_count, with_keys};
-use crate::print::PrintError;
 use crate::settings::{RecentFile, Settings};
 use crate::view::{Doc, Fit, LoadState, PageTex, ViewCtx};
-use crate::worker::{Cmd, DocId, Event, Job, OpenError, WorkerHandle};
+use crate::worker::{Cmd, DocId, Event, Job, WorkerHandle};
 use eframe::egui::{self, *};
+use nopepdf::i18n::{self, tr, tr_args, tr_count, with_keys};
+use nopepdf::pdf::OpenError;
+use nopepdf::print::PrintError;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -296,7 +297,7 @@ impl App {
             self.set_status(tr_args("print.failed", &[("error", &PrintError::Unsupported.message())]));
             return;
         }
-        if let Some(job) = crate::print::show_dialog(self.window, d.page_count(), d.current_page(), &d.name) {
+        if let Some(job) = nopepdf::print::show_dialog(self.window, d.page_count(), d.current_page(), &d.name) {
             let _ = self.worker.tx.send(Cmd::Print { doc: d.id, job });
             self.set_status(tr("print.printing"));
         }
