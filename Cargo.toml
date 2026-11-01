@@ -13,12 +13,14 @@ eframe = { version = "0.37", default-features = false, features = ["glow", "defa
 egui = "0.37"
 open = "5"
 pdfium-render = "0.9"
+raw-window-handle = "0.6"
 rfd = "0.17"
 serde = { version = "1", features = ["derive"] }
+sys-locale = "0.3"
 toml = "1"
 
 [target."cfg(windows)".dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Controls_Dialogs", "Win32_Storage_Xps", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Controls_Dialogs", "Win32_Storage_Xps", "Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 opt-level = 3

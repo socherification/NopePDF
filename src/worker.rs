@@ -3,11 +3,14 @@
 //! channel plus a shared, priority-ordered job queue that the UI rewrites each
 //! frame (so stale render requests are dropped automatically).
 
+use crate::i18n::{tr, tr_args};
+use crate::print::{Device, PageResult, PrintError};
 use eframe::egui;
 use pdfium_render::prelude::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
 
 pub type DocId = u64;
 
@@ -91,14 +94,48 @@ pub struct Link {
     pub target: LinkTarget,
 }
 
+/// Why a document could not be opened. The UI translates it when drawing, so a language
+/// switch also changes messages already on screen.
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenError {
+    Read(String),
+    InvalidPdf,
+    UnsupportedSecurity,
+    NeedsPassword,
+    Other(String),
+}
+
+impl OpenError {
+    fn from_pdfium(e: PdfiumError) -> Self {
+        match e {
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => OpenError::NeedsPassword,
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::FormatError) => OpenError::InvalidPdf,
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::SecurityError) => {
+                OpenError::UnsupportedSecurity
+            }
+            e => OpenError::Other(format!("{e:?}")),
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            OpenError::Read(e) => tr_args("error.read", &[("error", e)]),
+            OpenError::InvalidPdf => tr("error.invalid_pdf").into(),
+            OpenError::UnsupportedSecurity => tr("error.unsupported_security").into(),
+            OpenError::NeedsPassword => tr("doc.password_title").into(),
+            OpenError::Other(e) => tr_args("error.other", &[("error", e)]),
+        }
+    }
+}
+
 pub enum Event {
     Opened { doc: DocId, info: DocInfo },
-    OpenFailed { doc: DocId, error: String, needs_password: bool },
+    OpenFailed { doc: DocId, error: OpenError },
     Rendered { doc: DocId, job: Job, width: usize, height: usize, rgba: Vec<u8> },
     PageData { doc: DocId, page: usize, chars: Vec<TextChar>, links: Vec<Link> },
     SearchHits { doc: DocId, generation: u64, page: usize, hits: Vec<Vec<NRect>> },
     SearchProgress { doc: DocId, generation: u64, page: usize, done: bool },
-    PrintDone(Result<(), String>),
+    PrintDone(Result<(), PrintError>),
 }
 
 #[derive(Default)]
@@ -138,7 +175,17 @@ pub fn spawn(pdfium: Pdfium, ctx: egui::Context) -> WorkerHandle {
         .name("pdf-worker".into())
         .spawn(move || {
             let pdfium: &'static Pdfium = Box::leak(Box::new(pdfium));
-            Worker { pdfium, docs: HashMap::new(), searches: Vec::new(), cmd_rx, ev_tx, queue: q, ctx }.run();
+            Worker {
+                pdfium,
+                docs: HashMap::new(),
+                searches: Vec::new(),
+                prints: Vec::new(),
+                cmd_rx,
+                ev_tx,
+                queue: q,
+                ctx,
+            }
+            .run();
         })
         .expect("spawn worker");
     WorkerHandle { tx, rx, queue }
@@ -151,11 +198,25 @@ struct Search {
     next_page: usize,
 }
 
+/// A print job in progress: pages are rendered here one at a time and handed to the job's
+/// print thread. Dropping the task closes the channel, which cancels an unfinished job.
+struct PrintTask {
+    doc: DocId,
+    next: usize,
+    to: usize,
+    device: Device,
+    tx: mpsc::SyncSender<PageResult>,
+    /// A rendered page the print thread was not ready to take yet.
+    pending: Option<PageResult>,
+}
+
 struct Worker {
     pdfium: &'static Pdfium,
     docs: HashMap<DocId, PdfDocument<'static>>,
     /// Running searches, one per document, stepped round-robin.
     searches: Vec<Search>,
+    /// Running print jobs, stepped round-robin.
+    prints: Vec<PrintTask>,
     cmd_rx: mpsc::Receiver<Cmd>,
     ev_tx: mpsc::Sender<Event>,
     queue: Arc<Mutex<Queue>>,
@@ -183,13 +244,26 @@ impl Worker {
             if let Some(job) = job {
                 self.do_job(job);
                 self.queue.lock().unwrap().current = None;
-            } else if !self.searches.is_empty() {
-                self.search_step();
-            } else {
+                continue;
+            }
+            // Background work, one unit each, so view renders are checked again in between.
+            let printed = self.print_step();
+            let searched = self.search_step();
+            if printed || searched {
+                continue;
+            }
+            if self.prints.is_empty() {
                 // Idle: block until something arrives.
                 match self.cmd_rx.recv() {
                     Ok(cmd) => self.handle(cmd),
                     Err(_) => return,
+                }
+            } else {
+                // Every print thread is busy (spooling, or a "Save as" dialog is open).
+                match self.cmd_rx.recv_timeout(Duration::from_millis(20)) {
+                    Ok(cmd) => self.handle(cmd),
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return,
                 }
             }
         }
@@ -206,17 +280,8 @@ impl Worker {
             Cmd::Open { doc, path, password } => {
                 // Read the whole file into memory so no handle stays open: the file can be
                 // overwritten, renamed or deleted while it is being viewed.
-                let loaded = std::fs::read(&path).map_err(|e| e.to_string()).and_then(|bytes| {
-                    self.pdfium.load_pdf_from_byte_vec(bytes, password.as_deref()).map_err(|e| {
-                        let s = format!("{e:?}");
-                        if s.contains("FormatError") {
-                            "To nie jest prawidłowy plik PDF albo plik jest uszkodzony.".to_string()
-                        } else if s.contains("SecurityError") {
-                            "Ten dokument używa nieobsługiwanego zabezpieczenia.".to_string()
-                        } else {
-                            s
-                        }
-                    })
+                let loaded = std::fs::read(&path).map_err(|e| OpenError::Read(e.to_string())).and_then(|bytes| {
+                    self.pdfium.load_pdf_from_byte_vec(bytes, password.as_deref()).map_err(OpenError::from_pdfium)
                 });
                 match loaded {
                     Ok(d) => {
@@ -224,14 +289,13 @@ impl Worker {
                         self.docs.insert(doc, d);
                         self.send(Event::Opened { doc, info });
                     }
-                    Err(s) => {
-                        self.send(Event::OpenFailed { doc, needs_password: s.contains("Password"), error: s });
-                    }
+                    Err(error) => self.send(Event::OpenFailed { doc, error }),
                 }
             }
             Cmd::Close { doc } => {
                 self.docs.remove(&doc);
                 self.searches.retain(|s| s.doc != doc);
+                self.prints.retain(|p| p.doc != doc);
             }
             Cmd::Search { doc, query, generation } => {
                 self.searches.retain(|s| s.doc != doc);
@@ -239,11 +303,19 @@ impl Worker {
             }
             Cmd::CancelSearch { doc } => self.searches.retain(|s| s.doc != doc),
             Cmd::Print { doc, job } => {
-                let res = match self.docs.get(&doc) {
-                    Some(d) => crate::print::print_document(d, job),
-                    None => Err("Dokument nie jest otwarty".into()),
-                };
-                self.send(Event::PrintDone(res));
+                if !self.docs.contains_key(&doc) {
+                    self.send(Event::PrintDone(Err(PrintError::NotOpen)));
+                    return;
+                }
+                // A rendezvous channel: at most one page waits here and one is being printed.
+                let (tx, rx) = mpsc::sync_channel(0);
+                let task = PrintTask { doc, next: job.from, to: job.to, device: job.device, tx, pending: None };
+                let (ev_tx, ctx) = (self.ev_tx.clone(), self.ctx.clone());
+                crate::print::spawn_printer(job, rx, move |res| {
+                    let _ = ev_tx.send(Event::PrintDone(res));
+                    ctx.request_repaint();
+                });
+                self.prints.push(task);
             }
         }
     }
@@ -320,19 +392,57 @@ impl Worker {
         }
     }
 
+    /// Hands the next page of the first print job to its print thread (rendering it first if
+    /// needed), then moves the job to the back of the line. Returns false when there was
+    /// nothing to do or the print thread was not ready.
+    fn print_step(&mut self) -> bool {
+        if self.prints.is_empty() {
+            return false;
+        }
+        let mut t = self.prints.remove(0);
+        let page = match t.pending.take() {
+            Some(p) => p,
+            None => match self.docs.get(&t.doc) {
+                Some(d) => {
+                    let p = crate::print::render_page(d, t.next, &t.device);
+                    t.next += 1;
+                    p
+                }
+                None => return true,
+            },
+        };
+        let failed = page.is_err();
+        match t.tx.try_send(page) {
+            // Last page or an error: dropping the task closes the channel.
+            Ok(()) if failed || t.next > t.to => true,
+            Ok(()) => {
+                self.prints.push(t);
+                true
+            }
+            Err(mpsc::TrySendError::Full(page)) => {
+                t.pending = Some(page);
+                self.prints.push(t);
+                false
+            }
+            // The print thread stopped (error or cancelled dialog).
+            Err(mpsc::TrySendError::Disconnected(_)) => true,
+        }
+    }
+
     /// Searches one page of the first running search, then moves it to the back of the line.
-    fn search_step(&mut self) {
+    /// Returns false when no search is running.
+    fn search_step(&mut self) -> bool {
         if self.searches.is_empty() {
-            return;
+            return false;
         }
         let mut s = self.searches.remove(0);
-        let Some(d) = self.docs.get(&s.doc) else { return };
+        let Some(d) = self.docs.get(&s.doc) else { return true };
         let n = d.pages().len() as usize;
         let page = s.next_page;
         let (doc, generation) = (s.doc, s.generation);
         if page >= n {
             self.send(Event::SearchProgress { doc, generation, page, done: true });
-            return;
+            return true;
         }
         s.next_page += 1;
         let mut hits = Vec::new();
@@ -359,6 +469,7 @@ impl Worker {
             self.send(Event::SearchProgress { doc, generation, page, done: false });
         }
         self.searches.push(s);
+        true
     }
 }
 
@@ -448,4 +559,132 @@ fn walk(first: PdfBookmark, depth: usize, budget: &mut usize) -> Vec<OutlineItem
         cur = b.next_sibling();
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{lock, pdfium, sample};
+    use std::time::Instant;
+
+    fn next_event(w: &WorkerHandle) -> Event {
+        w.rx.recv_timeout(Duration::from_secs(60)).expect("no event from the worker")
+    }
+
+    fn open(w: &WorkerHandle, doc: DocId, path: PathBuf) -> Result<DocInfo, OpenError> {
+        w.tx.send(Cmd::Open { doc, path, password: None }).unwrap();
+        loop {
+            match next_event(w) {
+                Event::Opened { doc: d, info } if d == doc => return Ok(info),
+                Event::OpenFailed { doc: d, error } if d == doc => return Err(error),
+                _ => {}
+            }
+        }
+    }
+
+    /// Commands are handled in order, so once this answers, everything sent before it is done.
+    /// Tests call it before dropping the worker, so PDFium is idle when the lock is released.
+    fn finish(w: WorkerHandle) {
+        let missing = std::env::temp_dir().join("nopepdf-no-such-file.pdf");
+        let _ = open(&w, u64::MAX, missing);
+    }
+
+    #[test]
+    fn open_errors_are_classified() {
+        let _g = lock();
+        let Some(pdfium) = pdfium() else { return };
+        let w = spawn(pdfium, egui::Context::default());
+        let missing = std::env::temp_dir().join("nopepdf-no-such-file.pdf");
+        assert!(matches!(open(&w, 1, missing), Err(OpenError::Read(_))));
+        let not_pdf = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert_eq!(open(&w, 2, not_pdf).err(), Some(OpenError::InvalidPdf));
+        finish(w);
+    }
+
+    #[test]
+    fn search_counts_hits() {
+        let _g = lock();
+        let (Some(input), Some(pdfium)) = (sample(), pdfium()) else { return };
+        let w = spawn(pdfium, egui::Context::default());
+        let info = open(&w, 1, input).unwrap();
+        assert!(info.page_sizes.len() >= 3);
+        w.tx.send(Cmd::Search { doc: 1, query: "attention".into(), generation: 7 }).unwrap();
+        let mut hits = 0;
+        loop {
+            match next_event(&w) {
+                Event::SearchHits { generation: 7, hits: h, .. } => hits += h.len(),
+                Event::SearchProgress { generation: 7, done: true, .. } => break,
+                _ => {}
+            }
+        }
+        assert!(hits > 0);
+        finish(w);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn renders_while_printing() {
+        let _g = lock();
+        let (Some(input), Some(pdfium)) = (sample(), pdfium()) else { return };
+        let w = spawn(pdfium, egui::Context::default());
+        let n = open(&w, 1, input).unwrap().page_sizes.len();
+        let out = std::env::temp_dir().join("nopepdf-worker-print-test.pdf");
+        w.tx.send(Cmd::Print { doc: 1, job: crate::print::pdf_printer_job(0, n - 1, &out) }).unwrap();
+        // The view asks for a page while the job is running; it must not wait for the whole job.
+        std::thread::sleep(Duration::from_millis(500));
+        let render = Job::Render { doc: 1, page: n / 2, scale: 1.0, rotation: 0, invert: false, thumb: false };
+        w.set_queue(vec![render]);
+        let started = Instant::now();
+        let mut rendered_during_print = false;
+        let result = loop {
+            match next_event(&w) {
+                Event::Rendered { job, .. } if job == render => rendered_during_print = true,
+                Event::PrintDone(r) => break r,
+                _ => {}
+            }
+        };
+        println!("printed {n} pages in {:?}", started.elapsed());
+        assert_eq!(result, Ok(()));
+        assert!(rendered_during_print, "the view render waited for the whole print job");
+        let printed =
+            crate::testutil::pdfium().unwrap().load_pdf_from_file(&out, None).map(|d| d.pages().len() as usize);
+        assert_eq!(printed.ok(), Some(n));
+        finish(w);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn closing_the_document_cancels_printing() {
+        let _g = lock();
+        let (Some(input), Some(pdfium)) = (sample(), pdfium()) else { return };
+        let w = spawn(pdfium, egui::Context::default());
+        let n = open(&w, 1, input).unwrap().page_sizes.len();
+        let out = std::env::temp_dir().join("nopepdf-worker-cancel-test.pdf");
+        w.tx.send(Cmd::Print { doc: 1, job: crate::print::pdf_printer_job(0, n - 1, &out) }).unwrap();
+        w.tx.send(Cmd::Close { doc: 1 }).unwrap();
+        let result = loop {
+            if let Event::PrintDone(r) = next_event(&w) {
+                break r;
+            }
+        };
+        assert_eq!(result, Err(PrintError::Cancelled));
+        finish(w);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn printing_a_closed_document_fails() {
+        let _g = lock();
+        let Some(pdfium) = pdfium() else { return };
+        let w = spawn(pdfium, egui::Context::default());
+        let out = std::env::temp_dir().join("nopepdf-worker-notopen-test.pdf");
+        w.tx.send(Cmd::Print { doc: 42, job: crate::print::pdf_printer_job(0, 0, &out) }).unwrap();
+        let result = loop {
+            if let Event::PrintDone(r) = next_event(&w) {
+                break r;
+            }
+        };
+        assert_eq!(result, Err(PrintError::NotOpen));
+        finish(w);
+    }
 }

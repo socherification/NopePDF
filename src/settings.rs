@@ -21,12 +21,14 @@ pub struct Settings {
     pub dark: bool,
     pub invert_pages: bool,
     pub sidebar: bool,
+    /// UI language code such as "pl"; empty means follow the system language.
+    pub language: String,
     pub recent: Vec<RecentFile>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { dark: false, invert_pages: false, sidebar: true, recent: Vec::new() }
+        Settings { dark: false, invert_pages: false, sidebar: true, language: String::new(), recent: Vec::new() }
     }
 }
 

@@ -1,0 +1,87 @@
+# English: the source and fallback language. Every other file in this folder must have
+# exactly these keys and the same {placeholders}. Keyboard shortcuts are added in code.
+# Plural entries use the categories of the language's plural rule (src/i18n.rs).
+
+[meta]
+name = "English"
+
+[app]
+tagline = "Lightweight PDF reader"
+
+[toolbar]
+open = "Open"
+sidebar = "Sidebar"
+prev_page = "Previous page"
+next_page = "Next page"
+zoom_out = "Zoom out"
+zoom_in = "Zoom in"
+fit_width = "Fit width"
+fit_page = "Whole page"
+rotate = "Rotate right"
+search = "Search"
+print = "Print"
+theme = "Light / dark mode"
+invert = "Invert page colors (for reading at night)"
+language = "Language"
+language_system = "System language"
+
+[tabs]
+close = "Close"
+
+[dialog]
+all_files = "All files"
+
+[welcome]
+open = "Open file…"
+drop = "or drop a PDF file into this window"
+recent = "Recently opened"
+recent_page = "page {page}"
+
+[sidebar]
+outline = "Contents"
+thumbs = "Thumbnails"
+no_outline = "No table of contents"
+untitled = "(untitled)"
+
+[search]
+label = "Search:"
+hint = "text…"
+prev = "Previous"
+next = "Next"
+close = "Close"
+no_results = "No results"
+position = "{current} of {n}"
+results = { one = "{n} result", other = "{n} results" }
+searching = { one = "{n} result… (page {page})", other = "{n} results… (page {page})" }
+
+[disk]
+changed = "The file has changed on disk. Reload?"
+reload = "Reload"
+always = "Always reload this file"
+always_hint = "Until the tab is closed"
+ignore = "Ignore"
+reload_failed = "Could not reload: the file may still be being written"
+
+[doc]
+open_failed = "Could not open the file"
+password_title = "The document is password protected"
+wrong_password = "Wrong password"
+open = "Open"
+
+[print]
+printing = "Printing…"
+sent = "Sent to the printer"
+failed = "Printing failed: {error}"
+cancelled = "Printing cancelled"
+
+[error]
+invalid_pdf = "This is not a valid PDF file, or the file is damaged."
+unsupported_security = "This document uses an unsupported kind of protection."
+read = "Could not read the file: {error}"
+other = "Unexpected error: {error}"
+not_open = "The document is not open"
+print_start = "could not start the print job"
+print_page = "could not prepare page {page} for printing"
+printer = "printer error"
+print_unsupported = "printing is not supported on this platform yet"
+pdfium_missing = "The PDFium library was not found."
